@@ -1,0 +1,31 @@
+--esta query calcula el inicio de la administración de vasopresores
+-- Se considera como deterioro cardiovascular cuando el paciente le inician la administración de alguno de estos vasopresores
+set search_path to mimiciii;
+DROP TABLE IF EXISTS deterioro_cardio CASCADE;
+CREATE TABLE deterioro_cardio AS
+
+
+  select    s.icustay_id
+           ,s.subject_id
+		   ,s.intime
+		   ,s.outtime
+         , min(mv.starttime) as onset_deterioro --el valor minimo del tiempo de administración del vasopresor es el inicio del deterioro
+	     
+    -- case statement determining whether the ITEMID is an instance of vasopressor usage
+    , max(case when itemid = 221906 then rate end) as rate_norepinephrine
+    , max(case when itemid = 221289 then rate end) as rate_epinephrine
+    , max(case when itemid = 221662 then rate end) as rate_dopamine
+    , max(case when itemid = 221653 then rate end) as rate_dobutamine
+  from cohorte_3 s
+  
+  inner join inputevents_mv mv
+    on s.icustay_id = mv.icustay_id
+    and mv.starttime
+    between s.intime
+        and s.outtime
+  where itemid in (221906,221289,221662,221653)
+  -- 'Rewritten' orders are not delivered to the patient
+  and statusdescription != 'Rewritten'
+  group by s.icustay_id, s.subject_id, s.intime, s.outtime
+
+

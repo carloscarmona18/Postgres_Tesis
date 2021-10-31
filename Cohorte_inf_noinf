@@ -1,0 +1,5 @@
+set search_path to mimiciii;
+DROP TABLE IF EXISTS cohorte_hora1_noinf CASCADE;
+CREATE TABLE cohorte_hora1_noinf AS
+	SELECT * FROM mimiciii.cohorte_hora1
+	WHERE sospecha_infeccion = 0

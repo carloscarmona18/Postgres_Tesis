@@ -1,0 +1,123 @@
+--esta consulta toma los datos de sepsis3 donde considerando la exclusion de pacientes:
+--Menores de 14 años, 
+
+--Final cohort size: 13.765 ICU stays.
+set search_path to mimiciii;
+DROP TABLE IF EXISTS cohorte_3 CASCADE;
+CREATE TABLE cohorte_3 AS
+
+--Pacientes muertos hay que arreglarlo
+  select se.icustay_id as icustay_id 
+ ,se.subject_id as subject_id 
+ ,se.hadm_id as hadm_id
+ ,se.intime as intime
+ --,se.vent_starttime as vent_starttime --tiempo de inicio de ventilación 
+ ,se.outtime as outtime
+ --SObre infecciones
+-- ,se.suspected_of_infection_poe as sospecha_infeccion
+ --	,se.suspected_infection_time_poe as tiempo_sospecha_infeccion
+ --   ,se.suspected_infection_time_poe_days as tiempo_sospecha_infeccion_dias
+--	, se.si_starttime
+ --   , se.si_endtime
+ --   ,se.specimen_poe as especimen
+  --  ,se.positiveculture_poe as positivo_infeccion
+  --  ,se.antibiotic_time_poe as tiempo_antibiotico
+ ,se.age as age
+
+ ,se.icu_los as icu_los
+
+
+ ,se.elixhauser_hospital
+ --,se.died as died
+-- ,se.height as height
+ ,se.weight as weight
+ ,se.metastatic_cancer as cancer
+ ,se.diabetes as diabetes
+ ,case when se.gender = 'M' then 1 else 0 end as is_male
+ --,se.excluded as excluded
+ --variables de laboratorio clínico
+ ,l.wbc_min as wbc_min
+ ,l.wbc_max as wbc_max
+ ,l.lactate_max as lactate_max
+ ,l.lactate_min as lactate_min
+ ,l.glucose_min as glucose_min
+ ,l.glucose_max as glucose_max
+ ,l.hematocrit_min as hematocrit_min
+ ,l.hematocrit_max as hematocrit_max
+ ,l.hemoglobin_min as hemoglobin_min
+ ,l.hemoglobin_max as hemoglobin_max
+ ,l.pt_min as pt_min
+ ,l.pt_max as pt_max
+ ,l.platelet_min as platelet_min
+ ,l.platelet_max as platelet_max
+ ,l.potassium_min as potassium_min
+ ,l.potassium_max as potassium_max
+ ,l.chloride_min as chloride_min
+ ,l.chloride_max as chloride_max
+ ,l.creatinine_min as creatinine_min
+ ,l.creatinine_max as creatinine_max
+ ,l.bilirubin_min as bilirubin_min
+ ,l.bilirubin_max as bilirubin_max
+ ,l.aniongap_max as aniongap_max
+ ,l.aniongap_min as aniongap_min
+ 
+ 
+ 
+--Variables signos vitales
+  ,v.SysBP_Min
+  ,v.SysBP_Max
+  ,v.SysBP_Mean
+  ,v.Diasbp_Max
+  ,v.Diasbp_Min
+  ,v.Diasbp_Mean
+  ,v.meanbp_Max
+  ,v.meanbp_min
+  ,v.meanbp_mean
+  
+  
+  ,v.RespRate_min
+  ,v.RespRate_mean
+  ,v.RespRate_max
+  ,v.spo2_max
+  ,v.spo2_min
+  ,v.spo2_mean	
+  ,gcs.MinGCS
+  ,v.Tempc_Max
+  ,v.Tempc_Min 
+  ,v.Tempc_Mean
+  ,v.Heartrate_Max
+  ,v.Heartrate_Min
+  ,v.Heartrate_Mean
+  --pacientes muertos
+ --, se.dod
+  , 
+	case 
+    when se.dod_hosp <= se.outtime then 1
+    else 0
+  end died
+  , 
+  case 
+  when se.icu_los > 6 then 1
+  else 0
+  end icu_los6
+  , case when vas.cardiovascular > 0 then 1 else 0 end as deterioro_vaso
+  , case when v.meanbp_mean < 70 then 1 else 0 end as deterioro_map
+  , case when (cardiovascular > 0 or v.meanbp_mean < 70) then 1 else 0 end as deterioro_final
+  , det.onset_deterioro as onset
+from cohorte_2 se
+
+left join vitalsfirstday v
+  on se.icustay_id = v.icustay_id
+left join gcsfirstday gcs
+  on se.icustay_id = gcs.icustay_id
+left join labsfirstday l
+  on se.icustay_id = l.icustay_id
+join vasopresores vas
+  on vas.icustay_id = se.icustay_id
+left join deterioro_cardio det
+  on det.icustay_id = se.icustay_id
+
+ WHERE (excluded = 0) ---los datos que se excluyen se marcan con 1
+ order by se.icustay_id;
+ 
+

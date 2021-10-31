@@ -1,0 +1,102 @@
+-- ------------------------------------------------------------------
+-- Title: Sequential Organ Failure Assessment (SOFA)
+-- Originally written by: Alistair Johnson
+-- Contact: aewj [at] mit [dot] edu
+-- ------------------------------------------------------------------
+
+-- This query extracts the sequential organ failure assessment (formally: sepsis-related organ failure assessment).
+-- This score is a measure of organ failure for patients in the ICU.
+-- The score is calculated at the time of suspected infection.
+
+-- Reference for SOFA:
+--    Jean-Louis Vincent, Rui Moreno, Jukka Takala, Sheila Willatts, Arnaldo De Mendonça,
+--    Hajo Bruining, C. K. Reinhart, Peter M Suter, and L. G. Thijs.
+--    "The SOFA (Sepsis-related Organ Failure Assessment) score to describe organ dysfunction/failure."
+--    Intensive care medicine 22, no. 7 (1996): 707-710.
+
+-- Variables used in SOFA:
+--  GCS, MAP, FiO2, Ventilation status (sourced from CHARTEVENTS)
+--  Creatinine, Bilirubin, FiO2, PaO2, Platelets (sourced from LABEVENTS)
+--  Dobutamine, Epinephrine, Norepinephrine (sourced from INPUTEVENTS_MV and INPUTEVENTS_CV)
+--  Urine output (sourced from OUTPUTEVENTS)
+
+--DROP MATERIALIZED VIEW IF EXISTS disfuncion;
+
+--CREATE MATERIALIZED VIEW disfuncion AS
+set search_path to mimiciii;
+DROP TABLE IF EXISTS vasopresores CASCADE;
+CREATE TABLE vasopresores AS
+
+ with vaso_mv as
+(
+  select s.icustay_id
+    -- case statement determining whether the ITEMID is an instance of vasopressor usage
+    , max(case when itemid = 221906 then rate end) as rate_norepinephrine
+    , max(case when itemid = 221289 then rate end) as rate_epinephrine
+    , max(case when itemid = 221662 then rate end) as rate_dopamine
+    , max(case when itemid = 221653 then rate end) as rate_dobutamine
+  from cohorte_3 s
+    inner join inputevents_mv mv
+    on s.icustay_id = mv.icustay_id
+    and mv.starttime
+    between s.intime
+        and s.outtime
+  where itemid in (221906,221289,221662,221653)
+  -- 'Rewritten' orders are not delivered to the patient
+  and statusdescription != 'Rewritten'
+  group by s.icustay_id
+)
+, scorecomp as 
+(
+select s.icustay_id
+  
+  , coalesce(mv.rate_norepinephrine) as rate_norepinephrine
+  , coalesce(mv.rate_epinephrine) as rate_epinephrine
+  , coalesce(mv.rate_dopamine) as rate_dopamine
+  , coalesce(mv.rate_dobutamine) as rate_dobutamine
+
+  from cohorte_3 s
+left join vaso_mv mv
+  on s.icustay_id = mv.icustay_id
+)
+, scorecalc as
+(
+  -- Cardiovascular
+	select icustay_id
+   , case
+      when rate_dopamine > 15 or rate_epinephrine >  0.1 or rate_norepinephrine >  0.1 then 4
+      when rate_dopamine >  5 or rate_epinephrine <= 0.1 or rate_norepinephrine <= 0.1 then 3
+      when rate_dopamine >  0 or rate_dobutamine > 0 then 2
+      when coalesce(rate_dopamine, rate_dobutamine, rate_epinephrine, rate_norepinephrine) is null then null
+      else 0
+    end as cardiovascular
+
+  from scorecomp
+)
+select   pss.icustay_id
+	   , pss.intime
+        , coalesce(cardiovascular,0)
+         as  cardiovascular
+        , case 
+		 when cardiovascular > 0 
+		 then 1
+		 else 0 end as disfuncion_cardio
+		 
+ --Defino que, si tiene deterioro o los vasopresores, 
+ --deterioro final sea 1
+		,pss.deterioro_map
+		, case
+		when pss.deterioro_map = 1 and cardiovascular >0
+		then 1
+		else 0 end as deterioro_final
+		
+		 
+from cohorte_3 pss
+left join scorecalc s
+  on pss.icustay_id = s.icustay_id
+ and cardiovascular > 0
+ --where disfuncion_cardio = 1
+order by pss.icustay_id
+
+
+;
